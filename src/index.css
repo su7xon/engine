@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;500;700;900&display=swap');
+
 :root {
     margin: 0;
     padding: 0;
@@ -10,9 +12,54 @@ body {
     padding: 0;
     width: 100%;
     height: 100%;
+    background: #0A0E14;
 }
 
 #root {
     width: 100%;
     height: 100%;
+}
+
+@keyframes blink { 
+    0%, 100% { opacity: 1; } 
+    50% { opacity: 0.3; } 
+}
+
+@keyframes shimmer { 
+    0%, 100% { opacity: 0.3; } 
+    50% { opacity: 0.6; } 
+}
+
+@keyframes ticker {
+    0% { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+}
+
+@keyframes pulse-risk {
+    0% { stroke-opacity: 0.2; stroke-width: 0.5; }
+    50% { stroke-opacity: 0.8; stroke-width: 8; }
+    100% { stroke-opacity: 0.2; stroke-width: 0.5; }
+}
+
+@keyframes news-scroll {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(-50%); }
+}
+
+* { 
+    scrollbar-width: thin; 
+    scrollbar-color: #CBD5E1 transparent; 
+}
+
+::-webkit-scrollbar { 
+    width: 4px; 
+}
+
+::-webkit-scrollbar-track { 
+    background: transparent; 
+}
+
+::-webkit-scrollbar-thumb { 
+    background: #CBD5E1; 
+    border-radius: 10px; 
 }

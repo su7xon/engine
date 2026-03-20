@@ -111,6 +111,19 @@ export default function INDRAEngine() {
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [queryHighlightedNodes, setQueryHighlightedNodes] = useState(new Set());
   const [queryPrimaryNodes, setQueryPrimaryNodes] = useState(new Set());
+  const [darkMode, setDarkMode] = useState(false);
+  const [liveHeadlines, setLiveHeadlines] = useState([]);
+  const [liveIntelligence, setLiveIntelligence] = useState(null);
+  const [kbUpdating, setKbUpdating] = useState(false);
+  const [extractedEntities, setExtractedEntities] = useState(null);
+  const [economicData, setEconomicData] = useState(null);
+  const [filterType, setFilterType] = useState("all");
+  const [miniMapVisible, setMiniMapVisible] = useState(true);
+  const [visibleCountries, setVisibleCountries] = useState(new Set(["India", "China", "USA", "Russia", "Gulf States", "EU"]));
+  const [showAllNodes, setShowAllNodes] = useState(true);
+  const [dynamicGraph, setDynamicGraph] = useState(null);
+  const [currentTopic, setCurrentTopic] = useState("India");
+  const [selectedCountry, setSelectedCountry] = useState("India");
 
   const logActivity = (type, msg) => {
     setActivityLog(prev => [{ type, msg, time: new Date().toLocaleTimeString() }, ...prev].slice(0, 50));
@@ -120,6 +133,19 @@ export default function INDRAEngine() {
   const currentGraph = useMemo(() => {
     let nodes = graphData.nodes.map(n => ({ ...n }));
     let links = graphData.links.map(l => ({ ...l }));
+
+    // Filter: India Only vs Show All
+    if (!showAllNodes) {
+      // Get all nodes directly connected to India
+      const indiaLinks = links.filter(l => l.source === "India" || l.target === "India");
+      const connectedNodeIds = new Set(["India"]);
+      indiaLinks.forEach(l => {
+        connectedNodeIds.add(l.source);
+        connectedNodeIds.add(l.target);
+      });
+      nodes = nodes.filter(n => connectedNodeIds.has(n.id));
+      links = links.filter(l => connectedNodeIds.has(l.source) && connectedNodeIds.has(l.target));
+    }
 
     if (timelineEra === "2020") {
       // Historical: Less advanced tech, fewer digital dependencies
@@ -138,7 +164,7 @@ export default function INDRAEngine() {
     }
 
     return { nodes, links };
-  }, [timelineEra]);
+  }, [timelineEra, showAllNodes]);
 
   // Watch-list effect: log alerts when affected status changes
   const affectedNodes = useMemo(() => getAffectedNodes(offlineNodes, currentGraph), [offlineNodes, currentGraph]);
@@ -193,18 +219,78 @@ export default function INDRAEngine() {
     return affected;
   }
 
-  // Theme colors (light mode only)
+  // Fetch live intelligence and graph on mount
+  useEffect(() => {
+    const fetchLiveData = async () => {
+      try {
+        const [intelRes, entitiesRes, econRes, graphRes] = await Promise.all([
+          fetch(`http://localhost:3001/api/intelligence?topic=${currentTopic}`),
+          fetch('http://localhost:3001/api/entities'),
+          fetch('http://localhost:3001/api/economy'),
+          fetch('http://localhost:3001/api/graph')
+        ]);
+        
+        const intelData = await intelRes.json();
+        setLiveIntelligence(intelData);
+        
+        if (intelData.news) {
+          const headlines = intelData.news.slice(0, 15).map(n => 
+            `${n.source}: ${n.title}`.substring(0, 100)
+          );
+          setLiveHeadlines(headlines);
+        }
+        
+        const entitiesData = await entitiesRes.json();
+        setExtractedEntities(entitiesData);
+        
+        const econData = await econRes.json();
+        setEconomicData(econData);
+        
+        const graphData = await graphRes.json();
+        if (graphData.nodes && graphData.nodes.length > 0) {
+          setDynamicGraph(graphData);
+        }
+        
+        logActivity("SYSTEM", `LIVE INTELLIGENCE CONNECTED - Topic: ${currentTopic}`);
+      } catch (err) {
+        console.error("Failed to fetch live data:", err);
+        logActivity("ALERT", "INTELLIGENCE FEED OFFLINE - USING LOCAL CACHE");
+      }
+    };
+    
+    fetchLiveData();
+    const interval = setInterval(fetchLiveData, 300000);
+    return () => clearInterval(interval);
+  }, [currentTopic]);
+
+  // Manual KB update
+  const triggerKBUpdate = async () => {
+    setKbUpdating(true);
+    logActivity("INTEL", "INITIATING KNOWLEDGE BASE AUTO-UPDATE...");
+    try {
+      const res = await fetch('http://localhost:3001/api/kb/update', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        logActivity("SYSTEM", `KB UPDATED: ${data.newsCount} news processed, ${data.entities?.totalStored?.nodes || 0} entities stored`);
+      }
+    } catch (err) {
+      logActivity("ALERT", "KB UPDATE FAILED");
+    }
+    setKbUpdating(false);
+  };
+
+  // Theme colors (light/dark mode)
   const theme = useMemo(() => ({
-    bg: "#F1F5F9",
-    panel: "#FFFFFF",
-    border: "#CBD5E1",
-    text: "#1E293B",
-    secondary: "#64748B",
-    subtext: "#94A3B8",
-    grid: "#E2E8F0",
-    link: "#94A3B8",
-    nodeLabel: (d) => d3.color(d.color).darker(0.5).toString(),
-  }), []);
+    bg: darkMode ? "#0A0E14" : "#F1F5F9",
+    panel: darkMode ? "#111827" : "#FFFFFF",
+    border: darkMode ? "#374151" : "#CBD5E1",
+    text: darkMode ? "#F3F4F6" : "#1E293B",
+    secondary: darkMode ? "#9CA3AF" : "#64748B",
+    subtext: darkMode ? "#6B7280" : "#94A3B8",
+    grid: darkMode ? "#1F2937" : "#E2E8F0",
+    link: darkMode ? "#4B5563" : "#94A3B8",
+    nodeLabel: (d) => d3.color(d.color).darker(darkMode ? -0.5 : 0.5).toString(),
+  }), [darkMode]);
 
   const [containerReady, setContainerReady] = useState(false);
 
@@ -483,6 +569,18 @@ export default function INDRAEngine() {
       if (e.ctrlKey && e.key === 'Enter') {
         askINDRA(query);
       }
+      if (e.ctrlKey && e.key === 'd') {
+        e.preventDefault();
+        setDarkMode(!darkMode);
+      }
+      if (e.ctrlKey && e.key === 'h') {
+        e.preventDefault();
+        setShowHeatmap(!showHeatmap);
+      }
+      if (e.ctrlKey && e.key === 'k') {
+        e.preventDefault();
+        triggerKBUpdate();
+      }
       if (e.key === 'Escape') {
         setSelectedNode(null);
         setSearchQuery("");
@@ -492,7 +590,7 @@ export default function INDRAEngine() {
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [query]);
+  }, [query, darkMode, showHeatmap]);
 
   const highlightNode = (id) => {
     const searchTarget = id.toLowerCase();
@@ -607,24 +705,108 @@ export default function INDRAEngine() {
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <div style={{ width: 12, height: 12, borderRadius: "2px", background: "#FF9933" }} />
             <span style={{ color: "#FF9933", fontWeight: "900", letterSpacing: 6, fontSize: 18 }}>INDRA</span>
-            <span style={{ color: "#64748B", letterSpacing: 3, fontSize: 9, fontWeight: "500" }}>STRATEGIC INTELLIGENCE GRAPH</span>
+            <span style={{ color: theme.secondary, letterSpacing: 3, fontSize: 9, fontWeight: "500" }}>GLOBAL ONTOLOGY ENGINE</span>
           </div>
 
-          <div style={{ marginLeft: "auto", display: "flex", gap: 20, alignItems: "center" }}>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
+            {/* Node Filter */}
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              style={{
+                background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text,
+                fontSize: 9, padding: "6px 10px", borderRadius: 4, cursor: "pointer",
+                fontFamily: "monospace"
+              }}
+            >
+              <option value="all">ALL NODES</option>
+              <option value="country">COUNTRIES</option>
+              <option value="tech">TECHNOLOGY</option>
+              <option value="resource">RESOURCES</option>
+              <option value="sector">SECTORS</option>
+            </select>
+
+            {/* Show India Only Toggle */}
+            <button
+              onClick={() => setShowAllNodes(!showAllNodes)}
+              style={{
+                background: showAllNodes ? "rgba(255, 153, 51, 0.15)" : "rgba(15, 118, 110, 0.1)",
+                border: `1px solid ${showAllNodes ? '#FF9933' : '#0F766E'}`,
+                color: showAllNodes ? "#FF9933" : "#0F766E",
+                fontSize: 9, padding: "6px 12px", cursor: "pointer", borderRadius: 4,
+                fontFamily: "monospace", letterSpacing: 1, fontWeight: "bold"
+              }}
+            >
+              {showAllNodes ? "SHOW ALL" : "INDIA ONLY"}
+            </button>
+
+            {/* Country Selector */}
+            <select
+              value={currentTopic}
+              onChange={(e) => {
+                setCurrentTopic(e.target.value);
+                logActivity("SYSTEM", `TOPIC CHANGED: ${e.target.value.toUpperCase()}`);
+              }}
+              style={{
+                background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text,
+                fontSize: 9, padding: "6px 10px", borderRadius: 4, cursor: "pointer",
+                fontFamily: "monospace"
+              }}
+            >
+              <option value="India">INDIA</option>
+              <option value="China">CHINA</option>
+              <option value="USA">USA</option>
+              <option value="Russia">RUSSIA</option>
+              <option value="EU">EUROPE</option>
+              <option value="Middle East">MIDDLE EAST</option>
+              <option value="Taiwan">TAIWAN</option>
+              <option value="World">GLOBAL</option>
+            </select>
+
             <div style={{ position: "relative" }}>
-              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#64748B" }}>SEARCH:</span>
+              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: theme.secondary }}>SEARCH:</span>
               <input
                 type="text"
                 placeholder="..."
                 value={searchQuery}
                 onChange={(e) => { setSearchQuery(e.target.value); highlightNode(e.target.value); }}
                 style={{
-                  background: "#F1F5F9", border: `1px solid ${theme.border}`, color: "#1E293B",
+                  background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text,
                   fontSize: 10, padding: "6px 12px 6px 60px", width: 140, outline: "none",
                   borderRadius: 4, fontFamily: "monospace"
                 }}
               />
             </div>
+            
+            {/* KB Update Button */}
+            <button
+              onClick={triggerKBUpdate}
+              disabled={kbUpdating}
+              style={{
+                background: kbUpdating ? theme.border : "rgba(15, 118, 110, 0.1)",
+                border: `1px solid ${kbUpdating ? theme.border : '#0F766E'}`,
+                color: kbUpdating ? theme.secondary : "#0F766E",
+                fontSize: 9, padding: "6px 12px", cursor: kbUpdating ? "default" : "pointer",
+                borderRadius: 4, fontFamily: "monospace", letterSpacing: 2, fontWeight: "bold"
+              }}
+            >
+              {kbUpdating ? "UPDATING..." : "UPDATE KB"}
+            </button>
+            
+            {/* Dark Mode Toggle */}
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              style={{
+                background: darkMode ? "rgba(255, 153, 51, 0.15)" : "none",
+                border: `1px solid ${darkMode ? '#FF9933' : theme.border}`,
+                color: darkMode ? "#FF9933" : theme.text,
+                fontSize: 9, padding: "6px 12px", cursor: "pointer", borderRadius: 4,
+                fontFamily: "monospace", letterSpacing: 2, fontWeight: "bold"
+              }}
+            >
+              {darkMode ? "☀ LIGHT" : "☽ DARK"}
+            </button>
+            
             <button
               onClick={() => setShowHeatmap(!showHeatmap)}
               style={{
@@ -652,7 +834,7 @@ export default function INDRAEngine() {
                 <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#22C55E", display: "inline-block", animation: "blink 2s infinite" }} />
                 <span style={{ color: "#22C55E", fontSize: 10, letterSpacing: 2, fontWeight: "bold" }}>LIVE</span>
               </div>
-              <span style={{ color: "#64748B", fontSize: 10, fontFamily: "monospace" }}>{timeStr}</span>
+              <span style={{ color: theme.secondary, fontSize: 10, fontFamily: "monospace" }}>{timeStr}</span>
             </div>
           </div>
         </div>
@@ -671,11 +853,17 @@ export default function INDRAEngine() {
             }}>
               <div style={{ fontSize: 48, opacity: 0.12, marginBottom: 16 }}>☸</div>
               <div style={{ color: theme.secondary, fontSize: 11, letterSpacing: 4, fontWeight: "bold", marginBottom: 8 }}>
-                INTELLIGENCE GRAPH STANDBY
+                {darkMode ? "DARK MODE ACTIVE" : "INTELLIGENCE GRAPH STANDBY"}
               </div>
               <div style={{ color: theme.secondary, fontSize: 10, opacity: 0.5 }}>
-                Submit a query to activate strategic visualization
+                {liveHeadlines.length > 0 ? "Live intelligence connected • Submit a query" : "Submit a query to activate strategic visualization"}
               </div>
+              {extractedEntities && (
+                <div style={{ marginTop: 20, display: "flex", gap: 20, color: theme.secondary, fontSize: 9, fontFamily: "monospace" }}>
+                  <span>ENTITIES: {extractedEntities.nodes?.length || 0}</span>
+                  <span>RELATIONSHIPS: {extractedEntities.relationships?.length || 0}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -746,7 +934,10 @@ export default function INDRAEngine() {
             <div style={{ marginBottom: 4 }}>SCROLL: ZOOM</div>
             <div style={{ marginBottom: 4 }}>DRAG: PAN / REPOSITION</div>
             <div style={{ marginBottom: 4 }}>CLICK NODE: INSPECT</div>
-            <div style={{ color: "#FF9933" }}>CTRL+ENTER: RUN ANALYZE</div>
+            <div style={{ color: "#FF9933", marginBottom: 4 }}>CTRL+ENTER: RUN ANALYZE</div>
+            <div style={{ color: "#0F766E" }}>CTRL+D: DARK MODE</div>
+            <div style={{ color: "#0F766E" }}>CTRL+H: HEATMAP</div>
+            <div style={{ color: "#0F766E" }}>CTRL+K: UPDATE KB</div>
           </div>
 
           {/* Legend */}
@@ -782,7 +973,7 @@ export default function INDRAEngine() {
           {/* SIGINT Ticker */}
           <div style={{
             position: "absolute", bottom: 0, left: 0, right: 0, height: 32,
-            background: "#FFFFFF", borderTop: "1px solid #CBD5E1",
+            background: theme.panel, borderTop: `1px solid ${theme.border}`,
             display: "flex", alignItems: "center", overflow: "hidden", zIndex: 10
           }}>
             <div style={{
@@ -790,13 +981,13 @@ export default function INDRAEngine() {
               height: "100%", display: "flex", alignItems: "center", px: "12px",
               padding: "0 15px", letterSpacing: 2, flexShrink: 0
             }}>
-              SIGINT FEED
+              {liveHeadlines.length > 0 ? "LIVE INTEL FEED" : "SIGINT FEED"}
             </div>
             <div style={{
               display: "flex", whiteSpace: "nowrap", animation: "ticker 60s linear infinite",
               fontSize: 10, color: "#B45309", fontFamily: "monospace", gap: 50
             }}>
-              {HEADLINES.map((h, i) => (
+              {(liveHeadlines.length > 0 ? liveHeadlines : HEADLINES).map((h, i) => (
                 <span key={i}>{h}</span>
               ))}
             </div>
@@ -811,11 +1002,11 @@ export default function INDRAEngine() {
               boxShadow: "0 4px 20px rgba(0,0,0,0.1)", zIndex: 5
             }}>
               <div style={{ color: "#B45309", fontSize: 9, letterSpacing: 2, marginBottom: 12, fontWeight: "bold", borderBottom: "1px solid #E2E8F0", paddingBottom: 8 }}>
-                TAC-NEWS FEED
+                TAC-NEWS FEED {liveIntelligence?.sources && <span style={{fontSize:8}}>• RSS/CURRENTS/GDELT</span>}
               </div>
               <div style={{ height: 120, overflow: "hidden", position: "relative" }}>
                 <div style={{ animation: "news-scroll 15s linear infinite" }}>
-                  {HEADLINES.map((h, i) => (
+                  {(liveHeadlines.length > 0 ? liveHeadlines : HEADLINES).map((h, i) => (
                     <div key={i} style={{ fontSize: 10, color: theme.text, marginBottom: 12, lineHeight: 1.4, opacity: 0.8, borderLeft: "2px solid #FF9933", paddingLeft: 8 }}>
                       {h}
                     </div>
@@ -1022,29 +1213,6 @@ export default function INDRAEngine() {
           </div>
         )}
       </div>
-
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;500;700;900&display=swap');
-        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-        @keyframes shimmer { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.6; } }
-        @keyframes ticker {
-          0% { transform: translateX(100%); }
-          100% { transform: translateX(-100%); }
-        }
-        @keyframes pulse-risk {
-          0% { stroke-opacity: 0.2; stroke-width: 0.5; }
-          50% { stroke-opacity: 0.8; stroke-width: 8; }
-          100% { stroke-opacity: 0.2; stroke-width: 0.5; }
-        }
-        @keyframes news-scroll {
-          0% { transform: translateY(0); }
-          100% { transform: translateY(-50%); }
-        }
-        * { scrollbar-width: thin; scrollbar-color: ${theme.border} transparent; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: ${theme.border}; border-radius: 10px; }
-      `}</style>
     </div>
   );
 }
