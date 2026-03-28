@@ -1,96 +1,25 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import * as d3 from "d3";
+import Globe from "react-globe.gl";
+import NewsModal from "./NewsModal";
 
-const graphData = {
-  nodes: [
-    { id: "India", type: "country", size: 32, color: "#FF9933", desc: "Sovereign Republic of India. Core node of the Intelligence Graph." },
-    { id: "China", type: "country", size: 26, color: "#DE2910", desc: "People's Republic of China. Primary strategic competitor and supply chain dependency." },
-    { id: "USA", type: "country", size: 26, color: "#4B6BFB", desc: "United States of America. Key technology and security partner." },
-    { id: "Russia", type: "country", size: 22, color: "#6B7FD7", desc: "Russian Federation. Critical energy and defense equipment supplier." },
-    { id: "Gulf States", type: "country", size: 20, color: "#10B981", desc: "Primary source of energy and home to large Indian diaspora." },
-    { id: "EU", type: "country", size: 20, color: "#818CF8", desc: "Major trading partner and technology source." },
-    { id: "Semiconductors", type: "tech", size: 20, color: "#00D4FF", desc: "Microchips and integrated circuits. 100% import dependency for defense and tech." },
-    { id: "Oil & Energy", type: "resource", size: 24, color: "#FFD700", desc: "Crude oil and natural gas imports. Critical for national energy security." },
-    { id: "Defense", type: "sector", size: 22, color: "#FF4444", desc: "National defense and aerospace. Major user of high-tech imports." },
-    { id: "Agriculture", type: "sector", size: 18, color: "#44FF88", desc: "Backbone of rural economy. Vulnerable to monsoon shifts and global prices." },
-    { id: "Rare Earth", type: "resource", size: 18, color: "#C084FC", desc: "Critical minerals for electronics and green energy. High dependency on China." },
-    { id: "Remittances", type: "economic", size: 16, color: "#FFB344", desc: "$125B+ annual inflows. Critical for foreign exchange reserves." },
-    { id: "Border Disputes", type: "conflict", size: 18, color: "#FF6644", desc: "Active territorial conflicts (LAC/LoC). Key driver of defense spending." },
-    { id: "Climate Risk", type: "global", size: 16, color: "#44DDFF", desc: "Long-term threat to agriculture and urban stability." },
-    { id: "Pharma", type: "sector", size: 16, color: "#34D399", desc: "Pharmaceutical industry. Rely heavily on China for active ingredients (APIs)." },
-    { id: "UPI / Fintech", type: "tech", size: 16, color: "#A78BFA", desc: "Digital public infrastructure. India's strategic soft power in finance." },
-    { id: "Space / ISRO", type: "tech", size: 16, color: "#60A5FA", desc: "Strategic space capabilities and satellite intelligence." },
-  ],
-  links: [
-    { source: "India", target: "China", label: "Trade Deficit $85B", strength: 0.9 },
-    { source: "India", target: "USA", label: "Strategic Partner", strength: 0.75 },
-    { source: "India", target: "Russia", label: "60% Defense Imports", strength: 0.7 },
-    { source: "India", target: "Gulf States", label: "Oil + Diaspora", strength: 0.8 },
-    { source: "India", target: "Semiconductors", label: "100% Import Dep.", strength: 0.95 },
-    { source: "India", target: "Oil & Energy", label: "85% Import", strength: 0.9 },
-    { source: "India", target: "Defense", label: "₹6.2L Cr Budget", strength: 0.75 },
-    { source: "India", target: "Agriculture", label: "46% Workforce", strength: 0.85 },
-    { source: "India", target: "Rare Earth", label: "China Dependency", strength: 0.8 },
-    { source: "India", target: "Remittances", label: "$125B Inflow", strength: 0.65 },
-    { source: "India", target: "Border Disputes", label: "LAC + LoC", strength: 0.85 },
-    { source: "India", target: "Climate Risk", label: "Monsoon Stress", strength: 0.6 },
-    { source: "India", target: "Pharma", label: "Pharmacy of World", strength: 0.7 },
-    { source: "India", target: "UPI / Fintech", label: "10B+ txns/month", strength: 0.7 },
-    { source: "India", target: "Space / ISRO", label: "Chandrayaan-3", strength: 0.65 },
-    { source: "China", target: "Rare Earth", label: "60% Global Supply", strength: 0.95 },
-    { source: "China", target: "Semiconductors", label: "SMIC producer", strength: 0.8 },
-    { source: "Russia", target: "Oil & Energy", label: "Discounted crude", strength: 0.85 },
-    { source: "USA", target: "Semiconductors", label: "Controls TSMC/Nvidia", strength: 0.9 },
-    { source: "China", target: "Border Disputes", label: "LAC Incursions", strength: 0.85 },
-    { source: "EU", target: "India", label: "FTA Negotiations", strength: 0.45 },
-    { source: "Gulf States", target: "Remittances", label: "10M+ Workers", strength: 0.85 },
-    { source: "USA", target: "Defense", label: "GE F414 Engines", strength: 0.6 },
-  ]
+const graphData = { nodes: [], links: [] };
+
+const FALLBACK_DASHBOARD = {
+  summary: { totalArticles: 0, criticalAlerts: 0, highAlerts: 0 },
+  sentiment: { score: 0, label: "NEUTRAL" },
+  categories: [],
+  alerts: []
 };
 
-const SCENARIOS = [
+const FALLBACK_SCENARIOS = [
   { label: "Semiconductor Dependency", q: "Analyze India's risk if Taiwan semiconductor supply chain is disrupted." },
   { label: "Russia Energy Play", q: "How does discounted Russian oil affect India's strategic autonomy?" },
-  { label: "Top 3 Vulnerabilities", q: "Identify India's top 3 strategic vulnerabilities in the current global order." },
-  { label: "China Trade War", q: "Impact of $100B trade deficit with China on Indian MSMEs." },
-  { label: "Rare Earth Security", q: "Where does India get its rare earth elements from? Mapping dependencies." }
+  { label: "Top 3 Vulnerabilities", q: "Identify India's top 3 strategic vulnerabilities." },
+  { label: "China Trade War", q: "Impact of high trade deficit with China." }
 ];
 
-const HEADLINES = [
-  "BREAKING: GLOBAL CHIP SHORTAGE INTENSIFIES AS TSMC ANNOUNCES NEW MAINTENANCE DOWNTIME.",
-  "DIPLOMACY: INDIA-USA SIGN MAJOR DEFENSE TECHNOLOGY TRANSFER AGREEMENT (iCET).",
-  "ENERGY: RUSSIA INCREASES CRUDE EXPORTS TO ASIA; G7 PRICE CAP UNDER SCRUTINY.",
-  "MONITOR: LAC INFRASTRUCTURE BUILDUP DETECTED; SATELLITE IMAGERY CONFIRMS NEW HANGARS.",
-  "TECH: INDIA UPI TRANSACTIONS CROSS 12 BILLION IN SINGLE MONTH; GLOBAL ADOPTION RISING.",
-  "RESOURCE: RARE EARTH DISCOVERY IN JAMMU & KASHMIR ENTERING PHASE 2 VALIDATION.",
-  "CLIMATE: MONSOON DELAY POSES RISK TO AGRICULTURE SECTOR; WHEAT PRICES SURGE."
-];
-
-const AVAILABLE_NODES = graphData.nodes.map(n => n.id);
-
-const SYSTEM_PROMPT = `You are INDRA — India's Strategic Intelligence Analysis Engine. You analyze geopolitical, economic, defense, and technological dependencies for India using a real-time knowledge graph.
-
-You have access to this strategic dependency data:
-${JSON.stringify(graphData.links.map(l => ({ from: l.source, to: l.target, relationship: l.label })))}
-
-Available intelligence graph nodes: ${AVAILABLE_NODES.join(", ")}
-
-Respond in sharp intelligence-briefing style. Be specific with data and numbers. Max 200 words. Format:
-ASSESSMENT: [one-line summary]
-
-KEY FINDINGS:
-• [finding 1]
-• [finding 2]  
-• [finding 3]
-
-STRATEGIC IMPLICATION:
-[1-2 lines on what decision-makers should do]
-
-Occasionally mix in Hindi phrases naturally. Be direct and analytical, not diplomatic.
-
-IMPORTANT: At the very end of your response, on a new line, include exactly this tag with the relevant graph nodes (from the available nodes list above) that relate to the query. Pick ONLY the most relevant 2-5 nodes. Format: [NODES: Node1, Node2, Node3]
-Example: [NODES: China, Border Disputes, Defense]
-This tag is mandatory for every response. Do NOT include India in the nodes list.`;
+// Remove static SYSTEM_PROMPT. We will generate it dynamically to include live nodes.
 
 export default function INDRAEngine() {
   const svgRef = useRef(null);
@@ -105,16 +34,33 @@ export default function INDRAEngine() {
   const [offlineNodes, setOfflineNodes] = useState(new Set());
   const [isSituationRoom, setIsSituationRoom] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
   const [timelineEra, setTimelineEra] = useState("2024");
+  const [countriesData, setCountriesData] = useState({ features: [] });
+  const [hoveredCountry, setHoveredCountry] = useState(null);
+
+  useEffect(() => {
+    fetch('https://raw.githubusercontent.com/vasturiano/react-globe.gl/master/example/datasets/ne_110m_admin_0_countries.geojson')
+      .then(res => res.json())
+      .then(setCountriesData);
+  }, []);
   const [watchedNodes, setWatchedNodes] = useState(new Set());
   const [activityLog, setActivityLog] = useState([{ type: "SYSTEM", msg: "INDRA ENGINE INITIALIZED", time: new Date().toLocaleTimeString() }]);
+  const [analysisLog, setAnalysisLog] = useState([]);
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [queryHighlightedNodes, setQueryHighlightedNodes] = useState(new Set());
   const [queryPrimaryNodes, setQueryPrimaryNodes] = useState(new Set());
   const [darkMode, setDarkMode] = useState(false);
   const [liveHeadlines, setLiveHeadlines] = useState([]);
+  const [fallbackHeadlines, setFallbackHeadlines] = useState([]);
+  const [scenarioList, setScenarioList] = useState([]);
+  const [scenarioMode, setScenarioMode] = useState("dynamic");
+  const [scenarioSourceQuery, setScenarioSourceQuery] = useState("");
+  const [scenarioHistory, setScenarioHistory] = useState([]);
   const [liveIntelligence, setLiveIntelligence] = useState(null);
   const [kbUpdating, setKbUpdating] = useState(false);
+  const [predictingRisk, setPredictingRisk] = useState(false);
+  const [criticalRisks, setCriticalRisks] = useState([]);
   const [extractedEntities, setExtractedEntities] = useState(null);
   const [economicData, setEconomicData] = useState(null);
   const [filterType, setFilterType] = useState("all");
@@ -124,15 +70,36 @@ export default function INDRAEngine() {
   const [dynamicGraph, setDynamicGraph] = useState(null);
   const [currentTopic, setCurrentTopic] = useState("India");
   const [selectedCountry, setSelectedCountry] = useState("India");
+  const [dashboardStats, setDashboardStats] = useState(FALLBACK_DASHBOARD);
+  const [criticalAlerts, setCriticalAlerts] = useState([]);
+  const [newsModalCountry, setNewsModalCountry] = useState(null);
+  
+  const [riskScores, setRiskScores] = useState([]);
+  const [climateOverlay, setClimateOverlay] = useState({
+    data: null,
+    risk: null,
+    loading: false,
+    error: null
+  });
+  const [marketStress, setMarketStress] = useState({
+    loading: false,
+    error: null,
+    data: null
+  });
 
   const logActivity = (type, msg) => {
     setActivityLog(prev => [{ type, msg, time: new Date().toLocaleTimeString() }, ...prev].slice(0, 50));
   };
 
+  const logOperational = (type, msg) => {
+    setAnalysisLog(prev => [{ type, msg, time: new Date().toLocaleTimeString() }, ...prev].slice(0, 50));
+  };
+
   // Era-based graph filtering
   const currentGraph = useMemo(() => {
-    let nodes = graphData.nodes.map(n => ({ ...n }));
-    let links = graphData.links.map(l => ({ ...l }));
+    const dataSource = dynamicGraph || graphData;
+    let nodes = dataSource.nodes.map(n => ({ ...n }));
+    let links = (dataSource.links || dataSource.relationships || []).map(l => ({ ...l }));
 
     // Filter: India Only vs Show All
     if (!showAllNodes) {
@@ -164,7 +131,9 @@ export default function INDRAEngine() {
     }
 
     return { nodes, links };
-  }, [timelineEra, showAllNodes]);
+  }, [dynamicGraph, timelineEra, showAllNodes]);
+
+  const hasGraphData = (currentGraph?.nodes?.length || 0) > 0;
 
   // Watch-list effect: log alerts when affected status changes
   const affectedNodes = useMemo(() => getAffectedNodes(offlineNodes, currentGraph), [offlineNodes, currentGraph]);
@@ -223,21 +192,29 @@ export default function INDRAEngine() {
   useEffect(() => {
     const fetchLiveData = async () => {
       try {
-        const [intelRes, entitiesRes, econRes, graphRes] = await Promise.all([
+        const [intelRes, entitiesRes, econRes, graphRes, dashRes, alertsRes, cfgRes, riskRes] = await Promise.all([
           fetch(`http://localhost:3001/api/intelligence?topic=${currentTopic}`),
           fetch('http://localhost:3001/api/entities'),
           fetch('http://localhost:3001/api/economy'),
-          fetch('http://localhost:3001/api/graph')
+          fetch('http://localhost:3001/api/graph'),
+          fetch('http://localhost:3001/api/intelligence/dashboard'),
+          fetch('http://localhost:3001/api/alerts'),
+          fetch('http://localhost:3001/api/config/public'),
+          fetch('http://localhost:3001/api/markov-risk')
         ]);
         
         const intelData = await intelRes.json();
         setLiveIntelligence(intelData);
         
-        if (intelData.news) {
-          const headlines = intelData.news.slice(0, 15).map(n => 
-            `${n.source}: ${n.title}`.substring(0, 100)
-          );
+        // Get headlines - prioritize high priority articles
+        if (intelData.articles) {
+          const headlines = intelData.articles.slice(0, 15).map(n => {
+            const priorityIcon = n.analysis?.alertLevel === 'CRITICAL' ? '🔴' : 
+                                 n.analysis?.alertLevel === 'HIGH' ? '🟠' : '•';
+            return `${priorityIcon} ${n.source}: ${n.title}`.substring(0, 100);
+          });
           setLiveHeadlines(headlines);
+          setFallbackHeadlines(headlines);
         }
         
         const entitiesData = await entitiesRes.json();
@@ -251,9 +228,29 @@ export default function INDRAEngine() {
           setDynamicGraph(graphData);
         }
         
+        // Dashboard stats
+        const dashData = await dashRes.json();
+        setDashboardStats(dashData);
+        
+        // Critical alerts
+        const alertsData = await alertsRes.json();
+        setCriticalAlerts(alertsData.alerts || []);
+
+        const cfgData = await cfgRes.json();
+        setScenarioList(cfgData?.ui?.scenarios || []);
+
+        const riskData = await riskRes.json();
+        setRiskScores((riskData?.scores || []).map(r => ({ id: r.id, score: Number(r.riskScore || 0) })));
+        
+        if (alertsData.alerts && alertsData.alerts.length > 0) {
+          logActivity("ALERT", `${alertsData.alerts.length} CRITICAL ALERTS DETECTED`);
+        }
+        
         logActivity("SYSTEM", `LIVE INTELLIGENCE CONNECTED - Topic: ${currentTopic}`);
       } catch (err) {
         console.error("Failed to fetch live data:", err);
+        setDashboardStats(FALLBACK_DASHBOARD);
+        setScenarioList(FALLBACK_SCENARIOS);
         logActivity("ALERT", "INTELLIGENCE FEED OFFLINE - USING LOCAL CACHE");
       }
     };
@@ -263,20 +260,112 @@ export default function INDRAEngine() {
     return () => clearInterval(interval);
   }, [currentTopic]);
 
+  // Climate overlay data (free APIs via backend: Open-Meteo + GDELT)
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchClimateOverlay = async () => {
+      setClimateOverlay(prev => ({ ...prev, loading: true, error: null }));
+      try {
+        const [riskRes, climateRes] = await Promise.all([
+          fetch(`http://localhost:3001/api/climate/risk-score?country=${encodeURIComponent(currentTopic)}`),
+          fetch(`http://localhost:3001/api/climate/data?country=${encodeURIComponent(currentTopic)}`)
+        ]);
+
+        const riskData = await riskRes.json();
+        const climatePayload = await climateRes.json();
+
+        if (!cancelled) {
+          setClimateOverlay({
+            data: climatePayload?.data || null,
+            risk: riskData || null,
+            loading: false,
+            error: null
+          });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setClimateOverlay(prev => ({ ...prev, loading: false, error: err.message || 'overlay fetch failed' }));
+        }
+      }
+    };
+
+    fetchClimateOverlay();
+    const climateInterval = setInterval(fetchClimateOverlay, 180000);
+    return () => {
+      cancelled = true;
+      clearInterval(climateInterval);
+    };
+  }, [currentTopic]);
+
+  // Market stress overlay (free Yahoo Finance data via backend)
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchMarketStress = async () => {
+      setMarketStress(prev => ({ ...prev, loading: true, error: null }));
+      try {
+        const res = await fetch(`http://localhost:3001/api/market/stress?topic=${encodeURIComponent(currentTopic)}`);
+        const payload = await res.json();
+        if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
+
+        if (!cancelled) {
+          setMarketStress({ loading: false, error: null, data: payload });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setMarketStress(prev => ({ ...prev, loading: false, error: err.message || 'market feed unavailable' }));
+        }
+      }
+    };
+
+    fetchMarketStress();
+    const marketInterval = setInterval(fetchMarketStress, 180000);
+    return () => {
+      cancelled = true;
+      clearInterval(marketInterval);
+    };
+  }, [currentTopic]);
+
   // Manual KB update
-  const triggerKBUpdate = async () => {
+  const triggerKBUpdate = async (overrideTopic) => {
+    const topicToUpdate = overrideTopic || currentTopic;
     setKbUpdating(true);
-    logActivity("INTEL", "INITIATING KNOWLEDGE BASE AUTO-UPDATE...");
+    logActivity("INTEL", `DEPLOYING 10-AGENT SWARM FOR ${topicToUpdate.toUpperCase()}...`);
     try {
-      const res = await fetch('http://localhost:3001/api/kb/update', { method: 'POST' });
+      const res = await fetch('http://localhost:3001/api/kb/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: topicToUpdate }) });
       const data = await res.json();
       if (data.success) {
-        logActivity("SYSTEM", `KB UPDATED: ${data.newsCount} news processed, ${data.entities?.totalStored?.nodes || 0} entities stored`);
+        logActivity("SYSTEM", `SWARM COMPLETED: ${data.agentsDeployed || 10} Agents crawled ${data.newsCount} pages. Sentiment: ${data.avgSentiment?.toFixed(2) || 'N/A'}`);
+      } else {
+        logActivity("ALERT", `SWARM FAILED: ${data.reason}`);
       }
     } catch (err) {
-      logActivity("ALERT", "KB UPDATE FAILED");
+      logActivity("ALERT", "SWARM NETWORK FAILURE");
     }
     setKbUpdating(false);
+  };
+
+  // Run Markov Risk Prediction
+  const runRiskPrediction = async () => {
+    setPredictingRisk(true);
+    logActivity("SYSTEM", "INITIALIZING MARKOV CHAIN RISK SIMULATION...");
+    try {
+      const res = await fetch('http://localhost:3001/api/predict-risk');
+      const data = await res.json();
+      if (data.success) {
+        const topRisks = data.riskScores.slice(0, 5);
+        setCriticalRisks(topRisks);
+        logActivity("ALERT", `CRITICAL RISKS IDENTIFIED: ${topRisks.map(r => r.id).join(', ')}`);
+        
+        // Highlight them on graph
+        const riskNodes = new Set(topRisks.map(r => r.id));
+        setOfflineNodes(riskNodes);
+      }
+    } catch (err) {
+      logActivity("ALERT", "RISK PREDICTION FAILED");
+    }
+    setPredictingRisk(false);
   };
 
   // Theme colors (light/dark mode)
@@ -362,6 +451,17 @@ export default function INDRAEngine() {
     const nodes = filteredNodes;
     const links = filteredLinks;
 
+    const getNodeColor = (d) => {
+      if (typeof d.color === "string" && d.color.trim().length > 0) return d.color;
+      const type = (d.type || "").toLowerCase();
+      if (type.includes("country")) return "#FF9933";
+      if (type.includes("technology") || type.includes("tech")) return "#00D4FF";
+      if (type.includes("resource")) return "#FFD700";
+      if (type.includes("sector")) return "#FF4444";
+      if (type.includes("global")) return "#44DDFF";
+      return "#64748B";
+    };
+
     const sim = d3.forceSimulation(nodes)
       .force("link", d3.forceLink(links).id(d => d.id).distance(140).strength(0.5))
       .force("charge", d3.forceManyBody().strength(-350))
@@ -428,8 +528,22 @@ export default function INDRAEngine() {
         const tid = typeof d.target === 'string' ? d.target : d.target.id;
         return (queryHighlightedNodes.has(sid) && queryHighlightedNodes.has(tid)) ? "bold" : "normal";
       })
+      .attr("opacity", d => {
+        const sid = typeof d.source === 'string' ? d.source : d.source.id;
+        const tid = typeof d.target === 'string' ? d.target : d.target.id;
+        if (queryPrimaryNodes.has(sid) && queryPrimaryNodes.has(tid)) return 0.95;
+        if (queryHighlightedNodes.has(sid) && queryHighlightedNodes.has(tid)) return 0.75;
+        return 0.18;
+      })
       .attr("text-anchor", "middle").attr("font-family", "monospace")
-      .text(d => d.label);
+      .text(d => {
+        const sid = typeof d.source === 'string' ? d.source : d.source.id;
+        const tid = typeof d.target === 'string' ? d.target : d.target.id;
+        if (queryHighlightedNodes.size === 0) return "";
+        if (queryPrimaryNodes.has(sid) && queryPrimaryNodes.has(tid)) return d.label;
+        if (queryHighlightedNodes.has(sid) && queryHighlightedNodes.has(tid)) return d.label;
+        return "";
+      });
 
     const node = g.append("g").selectAll("g").data(nodes).enter().append("g")
       .style("cursor", "pointer")
@@ -453,7 +567,7 @@ export default function INDRAEngine() {
             <div style="font-size:9px; color:${impact > 0.5 ? '#FF4444' : '#94A3B8'}; margin-bottom:8px;">
               ${isOffline ? 'CRITICAL FAILURE' : impact > 0.2 ? `CASCADING RISK: ${(impact * 100).toFixed(0)}%` : `TYPE: ${d.type.toUpperCase()}`}
             </div>
-            <div style="line-height:1.4; font-size:10px;">${d.desc}</div>
+            <div style="line-height:1.4; font-size:10px;">${d.description || d.desc || 'No description available.'}</div>
           `);
       })
       .on("mousemove", (e) => {
@@ -475,7 +589,7 @@ export default function INDRAEngine() {
         const impact = affectedNodes.get(d.id) || 0;
         if (queryPrimaryNodes.has(d.id)) return "#FF9933";
         if (queryHighlightedNodes.has(d.id)) return "#0F766E";
-        return impact > 0.5 ? "#FF4444" : d.color;
+        return impact > 0.5 ? "#FF4444" : getNodeColor(d);
       })
       .attr("stroke-width", d => queryPrimaryNodes.has(d.id) ? 2 : (queryHighlightedNodes.has(d.id) ? 1 : 0.5))
       .attr("stroke-opacity", d => queryPrimaryNodes.has(d.id) ? 0.6 : (queryHighlightedNodes.has(d.id) ? 0.3 : 0.2))
@@ -499,16 +613,17 @@ export default function INDRAEngine() {
         if (offlineNodes.has(d.id)) return "#1a1a1a";
         const impact = affectedNodes.get(d.id) || 0;
         if (impact > 0.5) return "#441111";
-        if (queryPrimaryNodes.has(d.id)) return d.color + "70";
-        if (queryHighlightedNodes.has(d.id)) return d.color + "40";
-        return d.color + "33";
+        const base = getNodeColor(d);
+        if (queryPrimaryNodes.has(d.id)) return base + "70";
+        if (queryHighlightedNodes.has(d.id)) return base + "40";
+        return base + "33";
       })
       .attr("stroke", d => {
         if (offlineNodes.has(d.id)) return "#FF0000";
         if (queryPrimaryNodes.has(d.id)) return "#FF9933";
         if (queryHighlightedNodes.has(d.id)) return "#0F766E";
         const impact = affectedNodes.get(d.id) || 0;
-        return impact > 0.5 ? "#FF4444" : d.color;
+        return impact > 0.5 ? "#FF4444" : getNodeColor(d);
       })
       .attr("stroke-width", d => {
         if (queryPrimaryNodes.has(d.id)) return 5;
@@ -525,7 +640,7 @@ export default function INDRAEngine() {
       });
 
     node.append("text").attr("text-anchor", "middle").attr("dy", "0.35em")
-      .attr("font-size", d => queryPrimaryNodes.has(d.id) ? "14px" : (queryHighlightedNodes.has(d.id) ? "11px" : (d.size > 22 ? "11px" : "9px")))
+      .attr("font-size", d => queryPrimaryNodes.has(d.id) ? "15px" : (queryHighlightedNodes.has(d.id) ? "13px" : (d.size > 22 ? "12px" : "11px")))
       .attr("font-family", "monospace")
       .attr("fill", d => {
         if (offlineNodes.has(d.id)) return "#666";
@@ -534,6 +649,9 @@ export default function INDRAEngine() {
         return theme.nodeLabel;
       })
       .attr("font-weight", d => (d.id === "India" || queryPrimaryNodes.has(d.id) || queryHighlightedNodes.has(d.id)) ? "bold" : "normal")
+      .attr("paint-order", "stroke")
+      .attr("stroke", darkMode ? "rgba(0,0,0,0.8)" : "rgba(255,255,255,0.95)")
+      .attr("stroke-width", 2.2)
       .style("text-decoration", d => offlineNodes.has(d.id) ? "line-through" : "none")
       .text(d => d.id);
 
@@ -613,18 +731,56 @@ export default function INDRAEngine() {
     if (!q.trim() || loading) return;
     setLoading(true);
     setResponse("");
-    setActiveQuery(q);
+    setIsLogOpen(true);
+    setAnalysisLog([]);
     setQueryPrimaryNodes(new Set());
     setQueryHighlightedNodes(new Set());
 
     logActivity("INTEL", `INITIATING MULTI-SOURCE FUSION ANALYSIS: "${q.substring(0, 40)}..."`);
+    logOperational("INTEL", `ANALYZE REQUEST: "${q.substring(0, 60)}"`);
 
     try {
+      if (!hasGraphData) {
+        try {
+          const graphRes = await fetch('http://localhost:3001/api/graph');
+          const graphPayload = await graphRes.json();
+          if (graphPayload && graphPayload.nodes && graphPayload.nodes.length > 0) {
+            setDynamicGraph(graphPayload);
+          }
+        } catch (graphErr) {
+          logOperational("ALERT", `GRAPH LOAD FAILED: ${graphErr.message}`);
+        }
+      }
+
+      const activeData = dynamicGraph || graphData;
+      const AVAILABLE_NODES = activeData.nodes.map(n => n.id);
+      const DYNAMIC_SYSTEM_PROMPT = `You are INDRA — India's Strategic Intelligence Analysis Engine. You analyze geopolitical, economic, defense, and technological dependencies for India using a real-time knowledge graph.
+
+Available intelligence graph nodes: ${AVAILABLE_NODES.join(", ")}
+
+Respond in sharp intelligence-briefing style. Be specific with data and numbers. Max 200 words. Format:
+ASSESSMENT: [one-line summary]
+
+KEY FINDINGS:
+• [finding 1]
+• [finding 2]  
+• [finding 3]
+
+STRATEGIC IMPLICATION:
+[1-2 lines on what decision-makers should do]
+
+Occasionally mix in Hindi phrases naturally. Be direct and analytical, not diplomatic.
+
+IMPORTANT: At the very end of your response, on a new line, include exactly this tag with the relevant graph nodes (from the available nodes list above) that relate to the query. Pick ONLY the most relevant 2-5 nodes. Format: [NODES: Node1, Node2, Node3]
+Example: [NODES: China, Border Disputes, Defense]
+This tag is mandatory for every response. Do NOT include India in the nodes list.`;
+
       const res = await fetch("http://localhost:3001/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          system: SYSTEM_PROMPT,
+          system: DYNAMIC_SYSTEM_PROMPT,
+          topic: currentTopic,
           messages: [{ role: "user", content: q }]
         })
       });
@@ -633,6 +789,7 @@ export default function INDRAEngine() {
       if (!res.ok || data.error) {
         setResponse(`ERROR: ${data.error || 'Server returned an error. Status: ' + res.status}`);
         logActivity("ALERT", `API ERROR: ${data.error || res.status}`);
+        logOperational("ALERT", `ANALYZE FAILED: ${data.error || res.status}`);
         setLoading(false);
         return;
       }
@@ -645,25 +802,54 @@ export default function INDRAEngine() {
 [ CONFIDENCE: ${confidence}% ] [ SOURCES FUSED: ${sources} ] [ METHODS: ${markers.join(" // ")} ]
 [ STATUS: ASSESSED // VERIFIED ]`;
 
+      setActiveQuery(q);
       setResponse((data.text || "No response received.") + metadata);
       setSuggestions(data.suggestions || []);
+      if (Array.isArray(data.whatIfScenarios) && data.whatIfScenarios.length > 0) {
+        setScenarioList(data.whatIfScenarios);
+        setScenarioSourceQuery(q);
+        setScenarioHistory(prev => {
+          const nextEntry = { query: q, scenarios: data.whatIfScenarios, at: Date.now() };
+          const deduped = prev.filter(entry => entry.query !== q);
+          return [nextEntry, ...deduped].slice(0, 3);
+        });
+      }
+
+      let freshestGraph = currentGraph;
+      try {
+        logOperational("GRAPH", `AUTO-ENRICH STARTED FOR: ${currentTopic}`);
+        await fetch(`http://localhost:3001/api/graph/enrich?topic=${encodeURIComponent(currentTopic)}`);
+
+        const refreshedGraphRes = await fetch('http://localhost:3001/api/graph');
+        const refreshedGraph = await refreshedGraphRes.json();
+        if (refreshedGraph && refreshedGraph.nodes && refreshedGraph.nodes.length > 0) {
+          setDynamicGraph(refreshedGraph);
+          freshestGraph = refreshedGraph;
+          logOperational("GRAPH", `GRAPH REFRESHED: ${refreshedGraph.nodes.length} nodes`);
+        }
+      } catch (graphRefreshErr) {
+        logOperational("ALERT", `AUTO-ENRICH FAILED: ${graphRefreshErr.message}`);
+      }
 
       // Use LLM-determined relevant nodes
       if (data.relevantNodes && data.relevantNodes.length > 0) {
-        const validNodes = new Set(graphData.nodes.map(n => n.id));
+        const validNodes = new Set((freshestGraph?.nodes || []).map(n => n.id));
         const primary = new Set(data.relevantNodes.filter(n => n !== "India" && validNodes.has(n)));
         if (primary.size > 0) {
           setQueryPrimaryNodes(primary);
           setQueryHighlightedNodes(primary);
           logActivity("GRAPH", `LLM NODES ACTIVATED: ${[...primary].join(", ").toUpperCase()}`);
+          logOperational("GRAPH", `RELEVANT NODES: ${[...primary].join(", ")}`);
         }
       }
 
       logActivity("SYSTEM", `ANALYSIS COMPLETE: Reliability ${confidence}%`);
+      logOperational("SYSTEM", `ANALYSIS COMPLETE: Reliability ${confidence}%`);
     } catch (err) {
       console.error("INDRA fetch error:", err);
       setResponse(`ERROR: SECURE LINK DISRUPTED — ${err.message}. PLEASE RE-ESTABLISH CONNECTION.`);
       logActivity("ALERT", `BACKEND PROXY ERROR: ${err.message}`);
+      logOperational("ALERT", `BACKEND ERROR: ${err.message}`);
       setQueryHighlightedNodes(new Set());
     } finally {
       setLoading(false);
@@ -703,9 +889,11 @@ export default function INDRAEngine() {
           backdropFilter: "blur(10px)", gap: 20, zIndex: 10, flexShrink: 0
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ width: 12, height: 12, borderRadius: "2px", background: "#FF9933" }} />
-            <span style={{ color: "#FF9933", fontWeight: "900", letterSpacing: 6, fontSize: 18 }}>INDRA</span>
-            <span style={{ color: theme.secondary, letterSpacing: 3, fontSize: 9, fontWeight: "500" }}>GLOBAL ONTOLOGY ENGINE</span>
+            <img src="/indra-logo.png" alt="INDRA Logo" style={{ height: 50, objectFit: "contain" }} />
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <span style={{ color: "#FF9933", fontWeight: "900", letterSpacing: 6, fontSize: 18, lineHeight: 1 }}>INDRA</span>
+              <span style={{ color: theme.secondary, letterSpacing: 3, fontSize: 9, fontWeight: "500" }}>GLOBAL ONTOLOGY ENGINE</span>
+            </div>
           </div>
 
           <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
@@ -792,20 +980,21 @@ export default function INDRAEngine() {
             >
               {kbUpdating ? "UPDATING..." : "UPDATE KB"}
             </button>
-            
-            {/* Dark Mode Toggle */}
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              style={{
-                background: darkMode ? "rgba(255, 153, 51, 0.15)" : "none",
-                border: `1px solid ${darkMode ? '#FF9933' : theme.border}`,
-                color: darkMode ? "#FF9933" : theme.text,
-                fontSize: 9, padding: "6px 12px", cursor: "pointer", borderRadius: 4,
-                fontFamily: "monospace", letterSpacing: 2, fontWeight: "bold"
-              }}
-            >
-              {darkMode ? "☀ LIGHT" : "☽ DARK"}
-            </button>
+
+              {/* Predict Risk Button */}
+              <button
+                onClick={runRiskPrediction}
+                disabled={predictingRisk}
+                style={{
+                  background: predictingRisk ? theme.border : "rgba(255, 68, 68, 0.1)",
+                  border: `1px solid ${predictingRisk ? theme.border : '#FF4444'}`,
+                  color: predictingRisk ? theme.secondary : "#FF4444",
+                  fontSize: 9, padding: "6px 12px", cursor: predictingRisk ? "default" : "pointer",
+                  borderRadius: 4, fontFamily: "monospace", letterSpacing: 2, fontWeight: "bold"
+                }}
+              >
+                {predictingRisk ? "SIMULATING..." : "PREDICT RISKS"}
+              </button>
             
             <button
               onClick={() => setShowHeatmap(!showHeatmap)}
@@ -834,6 +1023,15 @@ export default function INDRAEngine() {
                 <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#22C55E", display: "inline-block", animation: "blink 2s infinite" }} />
                 <span style={{ color: "#22C55E", fontSize: 10, letterSpacing: 2, fontWeight: "bold" }}>LIVE</span>
               </div>
+              {/* Quick Stats */}
+              {dashboardStats && (
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <span style={{ fontSize: 9, color: theme.secondary }}>📰 {dashboardStats.summary?.totalArticles || 0}</span>
+                  {dashboardStats.sentiment?.score > 0 && <span style={{ fontSize: 9, color: "#22C55E" }}>😊 {dashboardStats.sentiment.score}</span>}
+                  {dashboardStats.sentiment?.score < 0 && <span style={{ fontSize: 9, color: "#FF4444" }}>😟 {dashboardStats.sentiment.score}</span>}
+                  {(dashboardStats.summary?.criticalAlerts || 0) > 0 && <span style={{ fontSize: 9, color: "#FF4444", fontWeight: "bold" }}>🚨 {dashboardStats.summary.criticalAlerts}</span>}
+                </div>
+              )}
               <span style={{ color: theme.secondary, fontSize: 10, fontFamily: "monospace" }}>{timeStr}</span>
             </div>
           </div>
@@ -843,27 +1041,47 @@ export default function INDRAEngine() {
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* Graph Container */}
         <div ref={containerRef} style={{ flex: 1, position: "relative", overflow: "hidden" }}>
-          <svg ref={svgRef} style={{ display: activeQuery ? "block" : "none", width: "100%", height: "100%" }} />
+          <svg ref={svgRef} style={{ display: (activeQuery && hasGraphData) ? "block" : "none", width: "100%", height: "100%" }} />
 
           {/* Standby screen before first query */}
-          {!activeQuery && (
+          {(!activeQuery || !hasGraphData) && (
             <div style={{
               position: "absolute", inset: 0, display: "flex", flexDirection: "column",
               alignItems: "center", justifyContent: "center", background: theme.bg,
             }}>
-              <div style={{ fontSize: 48, opacity: 0.12, marginBottom: 16 }}>☸</div>
-              <div style={{ color: theme.secondary, fontSize: 11, letterSpacing: 4, fontWeight: "bold", marginBottom: 8 }}>
-                {darkMode ? "DARK MODE ACTIVE" : "INTELLIGENCE GRAPH STANDBY"}
-              </div>
-              <div style={{ color: theme.secondary, fontSize: 10, opacity: 0.5 }}>
-                {liveHeadlines.length > 0 ? "Live intelligence connected • Submit a query" : "Submit a query to activate strategic visualization"}
-              </div>
-              {extractedEntities && (
-                <div style={{ marginTop: 20, display: "flex", gap: 20, color: theme.secondary, fontSize: 9, fontFamily: "monospace" }}>
-                  <span>ENTITIES: {extractedEntities.nodes?.length || 0}</span>
-                  <span>RELATIONSHIPS: {extractedEntities.relationships?.length || 0}</span>
+              <Globe
+                width={800}
+                height={600}
+                backgroundColor="rgba(0,0,0,0)"
+                globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
+                polygonsData={countriesData.features}
+                polygonAltitude={d => d === hoveredCountry ? 0.06 : 0.01}
+                polygonCapColor={d => d === hoveredCountry ? "#FF9933" : "rgba(15, 118, 110, 0.4)"}
+                polygonSideColor={() => "rgba(15, 118, 110, 0.1)"}
+                polygonStrokeColor={() => "#0F766E"}
+                polygonLabel={({ properties: d }) => `
+                  <div style="background: rgba(0,0,0,0.8); color: #FF9933; padding: 6px 12px; border-radius: 4px; border: 1px solid #FF9933; font-family: monospace; font-size: 11px;">
+                    <b>${d.ADMIN}</b> <br/>
+                    <i>[CLICK TO DEPLOY SWARM]</i>
+                  </div>
+                `}
+                onPolygonHover={setHoveredCountry}
+                onPolygonClick={(d) => {
+                  const countryName = d.properties.ADMIN;
+                  setCurrentTopic(countryName);
+                  setNewsModalCountry(countryName);
+                }}
+              />
+              <div style={{ position: "absolute", bottom: 40, textAlign: "center", pointerEvents: "none" }}>
+                <div style={{ color: theme.secondary, fontSize: 13, letterSpacing: 4, fontWeight: "bold", marginBottom: 8, background: "rgba(255,255,255,0.7)", padding: "10px", borderRadius: "4px" }}>
+                  {!hasGraphData ? "KNOWLEDGE GRAPH LOADING" : (darkMode ? "DARK MODE ACTIVE" : "INTELLIGENCE GRAPH STANDBY")}
                 </div>
-              )}
+                <div style={{ color: theme.secondary, fontSize: 11, background: "rgba(255,255,255,0.7)", padding: "4px 10px", borderRadius: "4px" }}>
+                  {!hasGraphData
+                    ? "Graph data not ready yet. Running analysis will keep globe view until graph is available."
+                    : (liveHeadlines.length > 0 ? "Live intelligence connected • Click a country or submit a query" : "Click any country to deploy Intel Swarm")}
+                </div>
+              </div>
             </div>
           )}
 
@@ -890,22 +1108,172 @@ export default function INDRAEngine() {
               <span style={{ color: "#FF9933", fontSize: 12 }}>{isLogOpen ? "▼" : "▲"}</span>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "15px 24px", fontFamily: "monospace", fontSize: 10 }}>
-              {activityLog.map((log, i) => (
-                <div key={i} style={{ marginBottom: 6, display: "flex", gap: 15 }}>
-                  <span style={{ color: theme.secondary, minWidth: 70 }}>[{log.time}]</span>
-                  <span style={{
-                    color: log.type === "ALERT" ? "#FF4444" : log.type === "INTEL" ? "#0F766E" : "#FF9933",
-                    minWidth: 60, fontWeight: "bold"
-                  }}>{log.type}</span>
-                  <span style={{ color: theme.text }}>{log.msg}</span>
+              {analysisLog.length === 0 ? (
+                <div style={{ color: theme.secondary, fontSize: 10 }}>
+                  Analyze run ka wait ho raha hai. Query likho aur RUN ANALYZE ENGINE dabao.
                 </div>
-              ))}
+              ) : (
+                analysisLog.map((log, i) => (
+                  <div key={i} style={{ marginBottom: 6, display: "flex", gap: 15 }}>
+                    <span style={{ color: theme.secondary, minWidth: 70 }}>[{log.time}]</span>
+                    <span style={{
+                      color: log.type === "ALERT" ? "#FF4444" : log.type === "INTEL" ? "#0F766E" : "#FF9933",
+                      minWidth: 60, fontWeight: "bold"
+                    }}>{log.type}</span>
+                    <span style={{ color: theme.text }}>{log.msg}</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
-          {/* Controls HUD */}
-          <div style={{
-            position: "absolute", top: 20, left: 24, fontSize: 9, color: "#64748B",
+          {/* Intelligence Dashboard Panel */}
+          {dashboardStats && (
+            <div style={{
+              position: "absolute", top: 14, left: 14, fontSize: 8, color: "#64748B",
+              letterSpacing: 2, background: "rgba(255,255,255,0.97)", padding: "15px", borderRadius: 6,
+              backdropFilter: "blur(6px)", borderLeft: "4px solid #0F766E",
+              zIndex: 10, boxShadow: "0 4px 20px rgba(0,0,0,0.1)", border: "1px solid #E2E8F0",
+              minWidth: 240,
+              maxWidth: 250,
+              maxHeight: "58vh",
+              overflowY: "auto",
+              paddingTop: 10,
+              paddingBottom: 10
+            }}>
+              <div style={{ marginBottom: 12, borderBottom: `1px solid ${theme.border}`, paddingBottom: 8, color: "#0F766E", fontWeight: "bold", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>📊 INTELLIGENCE DASHBOARD</span>
+                <span style={{ fontSize: 8, color: theme.secondary }}>LIVE</span>
+              </div>
+              
+              {/* Stats Row */}
+              <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 15, fontWeight: "bold", color: "#FF9933" }}>{dashboardStats.summary?.totalArticles || 0}</div>
+                  <div style={{ fontSize: 8, color: theme.secondary }}>ARTICLES</div>
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 15, fontWeight: "bold", color: dashboardStats.sentiment?.score > 0 ? "#22C55E" : dashboardStats.sentiment?.score < 0 ? "#FF4444" : "#94A3B8" }}>
+                    {dashboardStats.sentiment?.score || 0}%
+                  </div>
+                  <div style={{ fontSize: 8, color: theme.secondary }}>SENTIMENT</div>
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 15, fontWeight: "bold", color: (dashboardStats.summary?.criticalAlerts || 0) > 0 ? "#FF4444" : "#22C55E" }}>
+                    {dashboardStats.summary?.criticalAlerts || 0}
+                  </div>
+                  <div style={{ fontSize: 8, color: theme.secondary }}>ALERTS</div>
+                </div>
+              </div>
+              
+              {/* Categories */}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                {dashboardStats.categories?.slice(0, 4).map((cat, i) => (
+                  <span key={i} style={{
+                    fontSize: 8, padding: "3px 8px", borderRadius: 10,
+                    background: cat.color + "20", color: cat.color,
+                    fontWeight: "bold"
+                  }}>
+                    {cat.name} ({cat.count})
+                  </span>
+                ))}
+              </div>
+              
+              {/* Critical Alert */}
+              {dashboardStats.alerts?.[0] && (
+                <div style={{
+                  background: "#FF444410", border: "1px solid #FF4444",
+                  padding: "8px", borderRadius: 4, marginTop: 8
+                }}>
+                  <div style={{ color: "#FF4444", fontSize: 9, fontWeight: "bold", marginBottom: 4 }}>
+                    🚨 CRITICAL ALERT
+                  </div>
+                  <div style={{ color: theme.text, fontSize: 9, lineHeight: 1.3 }}>
+                    {dashboardStats.alerts[0].title?.substring(0, 60)}...
+                  </div>
+                </div>
+              )}
+              
+              {/* Markov Risk Scores */}
+              <div style={{
+                marginTop: 12,
+                paddingTop: 12,
+                borderTop: `1px solid ${theme.border}`,
+                borderLeft: marketStress.data?.stressLevel === "HIGH" ? "3px solid #DC2626" : marketStress.data?.stressLevel === "MEDIUM" ? "3px solid #D97706" : "3px solid transparent",
+                paddingLeft: 6,
+                background: marketStress.data?.stressLevel === "HIGH" ? "rgba(220, 38, 38, 0.06)" : marketStress.data?.stressLevel === "MEDIUM" ? "rgba(217, 119, 6, 0.05)" : "transparent",
+                borderRadius: 4
+              }}>
+                <div style={{ color: "#FF9933", fontSize: 9, fontWeight: "bold", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  📈 RISK PROPAGATION <span style={{fontSize: 7, color: theme.secondary}}>MARKOV</span>
+                  {marketStress.data?.stressLevel && (
+                    <span style={{
+                      fontSize: 7,
+                      fontWeight: "bold",
+                      color: marketStress.data.stressLevel === "HIGH" ? "#DC2626" : marketStress.data.stressLevel === "MEDIUM" ? "#D97706" : "#16A34A",
+                      background: marketStress.data.stressLevel === "HIGH" ? "rgba(220, 38, 38, 0.12)" : marketStress.data.stressLevel === "MEDIUM" ? "rgba(217, 119, 6, 0.12)" : "rgba(22, 163, 74, 0.12)",
+                      border: `1px solid ${marketStress.data.stressLevel === "HIGH" ? "#FCA5A5" : marketStress.data.stressLevel === "MEDIUM" ? "#FCD34D" : "#86EFAC"}`,
+                      borderRadius: 10,
+                      padding: "1px 6px"
+                    }}>
+                      MARKET {marketStress.data.stressLevel}
+                    </span>
+                  )}
+                </div>
+                {riskScores.slice(0, 3).map((r, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 8, marginBottom: 4 }}>
+                    <span style={{ color: i < 3 ? "#FF4444" : theme.text }}>{i+1}. {r.id}</span>
+                    <span style={{ color: "#FF9933", fontWeight: "bold" }}>{r.score}%</span>
+                  </div>
+                ))}
+              </div>
+              
+              {/* What-If Scenario Simulator */}
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${theme.border}` }}>
+                <div style={{ color: "#0F766E", fontSize: 9, fontWeight: "bold", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  🔮 WHAT-IF SCENARIOS <span style={{fontSize: 7, color: theme.secondary}}>SIMULATOR</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {(scenarioList.length > 0 ? scenarioList : FALLBACK_SCENARIOS).slice(0, 3).map((s, i) => (
+                    <div key={i} 
+                      onClick={() => askINDRA(s.q)}
+                      style={{
+                        background: theme.bg, padding: "6px 8px", borderRadius: 4,
+                        border: `1px solid ${theme.border}`, cursor: "pointer",
+                        transition: "all 0.2s", 
+                        ":hover": { background: theme.border }
+                      }}
+                      onMouseEnter={(e) => e.target.style.background = theme.border}
+                      onMouseLeave={(e) => e.target.style.background = theme.bg}
+                    >
+                      <div style={{ fontSize: 8, color: theme.text, marginBottom: 2 }}>{s.label || 'Scenario'}</div>
+                      <div style={{ fontSize: 8, color: "#FF8800", fontWeight: "bold" }}>{(s.q || '').slice(0, 38)}...</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Controls HUD - Toggle Button - Hidden */}
+          <button
+            onClick={() => setShowTimeline(!showTimeline)}
+            style={{
+              display: "none",
+              position: "absolute", top: 20, left: 320, padding: "6px 12px", fontSize: 9,
+              background: showTimeline ? "#FF9933" : "rgba(255,255,255,0.92)", color: showTimeline ? "white" : "#64748B",
+              border: "1px solid #E2E8F0", borderRadius: 4, cursor: "pointer", zIndex: 11,
+              fontWeight: "bold", letterSpacing: 1, transition: "all 0.2s",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
+            }}
+            title="Toggle keyboard shortcuts"
+          >
+            {showTimeline ? "⌨ HIDE" : "⌨ HELP"}
+          </button>
+
+          {/* Strategic Timeline - Hidden by Default */}
+          {showTimeline && <div style={{
+            position: "absolute", top: 20, left: 320, fontSize: 9, color: "#64748B",
             letterSpacing: 2, background: "rgba(255,255,255,0.92)", padding: "15px", borderRadius: 6,
             backdropFilter: "blur(6px)", borderLeft: "3px solid #FF9933",
             zIndex: 10, boxShadow: "0 4px 20px rgba(0,0,0,0.08)", border: "1px solid #E2E8F0"
@@ -938,22 +1306,115 @@ export default function INDRAEngine() {
             <div style={{ color: "#0F766E" }}>CTRL+D: DARK MODE</div>
             <div style={{ color: "#0F766E" }}>CTRL+H: HEATMAP</div>
             <div style={{ color: "#0F766E" }}>CTRL+K: UPDATE KB</div>
-          </div>
+          </div>}
 
-          {/* Legend */}
-          <div style={{
-            position: "absolute", bottom: 60, left: 24, background: "rgba(255,255,255,0.92)",
-            border: "1px solid #E2E8F0", padding: "15px 20px", backdropFilter: "blur(8px)",
-            boxShadow: "0 4px 20px rgba(0,0,0,0.08)", zIndex: 5, borderRadius: 6
-          }}>
-            <div style={{ color: "#64748B", fontSize: 9, letterSpacing: 3, marginBottom: 12, fontWeight: "bold" }}>NODE LEGEND</div>
-            {[["#FF9933", "Country"], ["#00D4FF", "Technology"], ["#FFD700", "Resource"], ["#FF4444", "Sector"], ["#44DDFF", "Global Issue"]].map(([c, l]) => (
-              <div key={l} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: c }} />
-                <span style={{ fontSize: 10, color: "#1E293B", fontWeight: "500" }}>{l.toUpperCase()}</span>
+          {/* Right-side Climate + Market stack */}
+          {!isSituationRoom && (
+            <>
+              <div style={{
+                position: "absolute", top: 14, right: 14, zIndex: 9,
+                width: 250,
+                background: "linear-gradient(160deg, rgba(255,255,255,0.98), rgba(236,253,245,0.98))",
+                border: "1px solid #99F6E4", borderLeft: "4px solid #14B8A6",
+                borderRadius: 8, boxShadow: "0 6px 24px rgba(20, 184, 166, 0.2)",
+                padding: "10px 12px", backdropFilter: "blur(6px)",
+                fontFamily: "monospace",
+                boxSizing: "border-box"
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ color: "#0F766E", fontSize: 10, fontWeight: "bold", letterSpacing: 1.5 }}>CLIMATE OVERLAY</span>
+                  <span style={{ color: "#0F766E", fontSize: 8 }}>LIVE FREE API</span>
+                </div>
+
+                {climateOverlay.loading ? (
+                  <div style={{ fontSize: 10, color: "#0F766E" }}>Syncing climate feed...</div>
+                ) : climateOverlay.error ? (
+                  <div style={{ fontSize: 10, color: "#DC2626" }}>Climate feed unavailable</div>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 9, color: "#334155", marginBottom: 6 }}>{currentTopic.toUpperCase()}</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                      <span style={{ fontSize: 9, color: "#64748B" }}>Temp</span>
+                      <span style={{ fontSize: 12, color: "#0F766E", fontWeight: "bold" }}>
+                        {climateOverlay.data?.temperature ?? "--"}°C
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                      <span style={{ fontSize: 9, color: "#64748B" }}>Conditions</span>
+                      <span style={{ fontSize: 9, color: "#1E293B", textTransform: "uppercase" }}>
+                        {(climateOverlay.data?.conditions || "unknown").slice(0, 16)}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <span style={{ fontSize: 9, color: "#64748B" }}>Instability</span>
+                      <span style={{
+                        fontSize: 9,
+                        fontWeight: "bold",
+                        color: climateOverlay.risk?.level === "HIGH" ? "#DC2626" : climateOverlay.risk?.level === "MEDIUM" ? "#D97706" : "#16A34A"
+                      }}>
+                        {climateOverlay.risk?.level || "--"} ({climateOverlay.risk?.score ?? "--"})
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 8, color: "#64748B", borderTop: "1px dashed #99F6E4", paddingTop: 6 }}>
+                      Source: Open-Meteo + GDELT (100% free)
+                    </div>
+                  </>
+                )}
               </div>
-            ))}
-          </div>
+
+              <div style={{
+                position: "absolute", top: 188, right: 14, zIndex: 9,
+                width: 250,
+                background: "linear-gradient(165deg, rgba(255,255,255,0.98), rgba(255,247,237,0.98))",
+                border: "1px solid #FECACA", borderLeft: "4px solid #EA580C",
+                borderRadius: 8, boxShadow: "0 6px 20px rgba(234, 88, 12, 0.18)",
+                padding: "10px 12px", backdropFilter: "blur(6px)",
+                fontFamily: "monospace",
+                boxSizing: "border-box"
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ color: "#C2410C", fontSize: 10, fontWeight: "bold", letterSpacing: 1.4 }}>MARKET STRESS</span>
+                  <span style={{ color: "#9A3412", fontSize: 8 }}>LIVE FREE FEED</span>
+                </div>
+
+                {marketStress.loading ? (
+                  <div style={{ fontSize: 10, color: "#C2410C" }}>Syncing market signals...</div>
+                ) : marketStress.error ? (
+                  <div style={{ fontSize: 10, color: "#DC2626" }}>Market feed unavailable</div>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 7 }}>
+                      <span style={{ fontSize: 9, color: "#64748B" }}>Crisis Watch</span>
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: "bold",
+                        color: marketStress.data?.stressLevel === "HIGH" ? "#DC2626" : marketStress.data?.stressLevel === "MEDIUM" ? "#D97706" : "#16A34A"
+                      }}>
+                        {marketStress.data?.stressLevel || "--"} ({marketStress.data?.stressScore ?? "--"})
+                      </span>
+                    </div>
+
+                    <div style={{ borderTop: "1px dashed #FDBA74", paddingTop: 6 }}>
+                      {(marketStress.data?.drivers || []).slice(0, 3).map((d) => (
+                        <div key={d.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 8 }}>
+                          <span style={{ color: "#334155" }}>{d.label}</span>
+                          <span style={{ color: d.changePct < 0 ? "#DC2626" : "#16A34A", fontWeight: "bold" }}>
+                            {d.changePct > 0 ? "+" : ""}{d.changePct}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ fontSize: 8, color: "#64748B", borderTop: "1px dashed #FDBA74", paddingTop: 6 }}>
+                      Source: Yahoo Finance public chart API
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+
+
 
           {/* Situation Room Exit Button */}
           {isSituationRoom && (
@@ -977,19 +1438,27 @@ export default function INDRAEngine() {
             display: "flex", alignItems: "center", overflow: "hidden", zIndex: 10
           }}>
             <div style={{
-              background: "#FF9933", color: "#000", fontSize: 9, fontWeight: "900",
+              background: criticalAlerts.length > 0 ? "#FF4444" : "#FF9933", 
+              color: "#000", fontSize: 9, fontWeight: "900",
               height: "100%", display: "flex", alignItems: "center", px: "12px",
               padding: "0 15px", letterSpacing: 2, flexShrink: 0
             }}>
-              {liveHeadlines.length > 0 ? "LIVE INTEL FEED" : "SIGINT FEED"}
+              {criticalAlerts.length > 0 ? `⚠ ALERT: ${criticalAlerts.length} CRITICAL` : liveHeadlines.length > 0 ? "LIVE INTEL FEED" : "SIGINT FEED"}
             </div>
             <div style={{
               display: "flex", whiteSpace: "nowrap", animation: "ticker 60s linear infinite",
-              fontSize: 10, color: "#B45309", fontFamily: "monospace", gap: 50
+              fontSize: 10, fontFamily: "monospace", gap: 50
             }}>
-              {(liveHeadlines.length > 0 ? liveHeadlines : HEADLINES).map((h, i) => (
-                <span key={i}>{h}</span>
-              ))}
+              {(liveHeadlines.length > 0 ? liveHeadlines : fallbackHeadlines).map((h, i) => {
+                const isAlert = h.startsWith('🔴');
+                const isWarning = h.startsWith('🟠');
+                return (
+                  <span key={i} style={{ 
+                    color: isAlert ? "#FF4444" : isWarning ? "#FF8800" : "#B45309",
+                    fontWeight: isAlert ? "bold" : "normal"
+                  }}>{h}</span>
+                );
+              })}
             </div>
           </div>
 
@@ -1006,7 +1475,7 @@ export default function INDRAEngine() {
               </div>
               <div style={{ height: 120, overflow: "hidden", position: "relative" }}>
                 <div style={{ animation: "news-scroll 15s linear infinite" }}>
-                  {(liveHeadlines.length > 0 ? liveHeadlines : HEADLINES).map((h, i) => (
+                  {(liveHeadlines.length > 0 ? liveHeadlines : fallbackHeadlines).map((h, i) => (
                     <div key={i} style={{ fontSize: 10, color: theme.text, marginBottom: 12, lineHeight: 1.4, opacity: 0.8, borderLeft: "2px solid #FF9933", paddingLeft: 8 }}>
                       {h}
                     </div>
@@ -1063,7 +1532,7 @@ export default function INDRAEngine() {
               <div style={{ maxHeight: "180px", overflowY: "auto" }}>
                 {(suggestions.length > 0
                   ? suggestions.map(s => ({ label: s.length > 50 ? s.substring(0, 50) + "..." : s, q: s }))
-                  : SCENARIOS
+                  : scenarioList
                 ).map((s, i) => (
                   <div
                     key={i}
@@ -1143,7 +1612,7 @@ export default function INDRAEngine() {
                   <div style={{ background: "#F8FAFC", padding: "10px", borderRadius: 4, border: `1px solid ${theme.border}` }}>
                     <div style={{ color: theme.secondary, fontSize: 8, letterSpacing: 2, marginBottom: 2 }}>CONNECTIVITY</div>
                     <div style={{ color: theme.text, fontSize: 10, fontWeight: "bold" }}>
-                      LEVEL {graphData.links.filter(l => l.source === selectedNode.id || l.target === selectedNode.id).length}
+                      LEVEL {currentGraph.links.filter(l => l.source === selectedNode.id || l.target === selectedNode.id).length}
                     </div>
                   </div>
                 </div>
@@ -1213,6 +1682,14 @@ export default function INDRAEngine() {
           </div>
         )}
       </div>
+
+      {/* Phase 7: News Modal */}
+      {newsModalCountry && (
+        <NewsModal
+          country={newsModalCountry}
+          onClose={() => setNewsModalCountry(null)}
+        />
+      )}
     </div>
   );
 }

@@ -4,7 +4,6 @@ import fs from 'fs';
 
 const DB_PATH = path.join(process.cwd(), 'data', 'indra.db');
 
-// Ensure data directory exists
 const dataDir = path.dirname(DB_PATH);
 if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
@@ -13,12 +12,10 @@ if (!fs.existsSync(dataDir)) {
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 
-// Initialize database schema
 function initializeDatabase() {
     console.log('[DB] Initializing database...');
-    
+
     db.exec(`
-        -- Nodes table
         CREATE TABLE IF NOT EXISTS nodes (
             id TEXT PRIMARY KEY,
             type TEXT NOT NULL,
@@ -30,7 +27,6 @@ function initializeDatabase() {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
-        -- Relationships table
         CREATE TABLE IF NOT EXISTS relationships (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             source TEXT NOT NULL,
@@ -43,7 +39,6 @@ function initializeDatabase() {
             FOREIGN KEY (target) REFERENCES nodes(id)
         );
 
-        -- Intelligence articles table
         CREATE TABLE IF NOT EXISTS intelligence (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
@@ -56,7 +51,6 @@ function initializeDatabase() {
             fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
-        -- Extracted facts table
         CREATE TABLE IF NOT EXISTS facts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             fact TEXT NOT NULL,
@@ -66,7 +60,6 @@ function initializeDatabase() {
             FOREIGN KEY (source_article_id) REFERENCES intelligence(id)
         );
 
-        -- Sessions/conversations table
         CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY,
             user_id TEXT,
@@ -75,7 +68,6 @@ function initializeDatabase() {
             last_activity DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
-        -- Conversation history
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT,
@@ -85,7 +77,6 @@ function initializeDatabase() {
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         );
 
-        -- Watch list (nodes being monitored)
         CREATE TABLE IF NOT EXISTS watchlist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             node_id TEXT,
@@ -94,26 +85,30 @@ function initializeDatabase() {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
-        -- Create indexes
         CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
+        CREATE INDEX IF NOT EXISTS idx_nodes_created ON nodes(created_at);
         CREATE INDEX IF NOT EXISTS idx_relationships_source ON relationships(source);
         CREATE INDEX IF NOT EXISTS idx_relationships_target ON relationships(target);
         CREATE INDEX IF NOT EXISTS idx_intelligence_topic ON intelligence(topic);
         CREATE INDEX IF NOT EXISTS idx_intelligence_fetched ON intelligence(fetched_at);
+        CREATE INDEX IF NOT EXISTS idx_intelligence_category ON intelligence(category);
         CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+        CREATE INDEX IF NOT EXISTS idx_facts_confidence ON facts(confidence);
+        CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id);
+        
+        CREATE INDEX IF NOT EXISTS idx_nodes_type_created ON nodes(type, created_at);
+        CREATE INDEX IF NOT EXISTS idx_intelligence_topic_fetched ON intelligence(topic, fetched_at DESC);
     `);
 
-    console.log('[DB] Database initialized successfully');
+    console.log('[DB] Database initialized successfully with optimized indexes');
 }
-
-// ==================== NODE OPERATIONS ====================
 
 export function addNode(id, type, description = '', color = null, size = 20) {
     const stmt = db.prepare(`
         INSERT OR REPLACE INTO nodes (id, type, description, color, size, updated_at)
         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `);
-    
+
     const defaultColors = {
         country: '#FF9933',
         tech: '#00D4FF',
@@ -123,7 +118,7 @@ export function addNode(id, type, description = '', color = null, size = 20) {
         conflict: '#FF6644',
         global: '#44DDFF'
     };
-    
+
     stmt.run(id, type, description, color || defaultColors[type] || '#888888', size);
     return getNode(id);
 }
@@ -139,7 +134,7 @@ export function getAllNodes() {
 export function updateNode(id, updates) {
     const fields = [];
     const values = [];
-    
+
     if (updates.description !== undefined) {
         fields.push('description = ?');
         values.push(updates.description);
@@ -152,12 +147,12 @@ export function updateNode(id, updates) {
         fields.push('size = ?');
         values.push(updates.size);
     }
-    
+
     if (fields.length === 0) return getNode(id);
-    
+
     fields.push('updated_at = CURRENT_TIMESTAMP');
     values.push(id);
-    
+
     db.prepare(`UPDATE nodes SET ${fields.join(', ')} WHERE id = ?`).run(...values);
     return getNode(id);
 }
@@ -167,18 +162,15 @@ export function deleteNode(id) {
     db.prepare('DELETE FROM relationships WHERE source = ? OR target = ?').run(id, id);
 }
 
-// ==================== RELATIONSHIP OPERATIONS ====================
-
 export function addRelationship(source, target, label = '', strength = 0.5) {
-    // Ensure nodes exist
     if (!getNode(source)) addNode(source, 'unknown');
     if (!getNode(target)) addNode(target, 'unknown');
-    
+
     const stmt = db.prepare(`
         INSERT INTO relationships (source, target, label, strength)
         VALUES (?, ?, ?, ?)
     `);
-    
+
     const result = stmt.run(source, target, label, strength);
     return getRelationship(result.lastInsertRowid);
 }
@@ -201,7 +193,7 @@ export function getRelationshipsForNode(nodeId) {
 export function updateRelationship(id, updates) {
     const fields = [];
     const values = [];
-    
+
     if (updates.label !== undefined) {
         fields.push('label = ?');
         values.push(updates.label);
@@ -210,9 +202,9 @@ export function updateRelationship(id, updates) {
         fields.push('strength = ?');
         values.push(updates.strength);
     }
-    
+
     if (fields.length === 0) return getRelationship(id);
-    
+
     values.push(id);
     db.prepare(`UPDATE relationships SET ${fields.join(', ')} WHERE id = ?`).run(...values);
     return getRelationship(id);
@@ -222,14 +214,12 @@ export function deleteRelationship(id) {
     db.prepare('DELETE FROM relationships WHERE id = ?').run(id);
 }
 
-// ==================== INTELLIGENCE OPERATIONS ====================
-
 export function addIntelligenceArticle(article) {
     const stmt = db.prepare(`
         INSERT INTO intelligence (title, description, source, url, category, topic, published_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    
+
     const result = stmt.run(
         article.title,
         article.description || '',
@@ -239,7 +229,7 @@ export function addIntelligenceArticle(article) {
         article.topic || 'India',
         article.pubDate || null
     );
-    
+
     return getIntelligenceArticle(result.lastInsertRowid);
 }
 
@@ -256,7 +246,7 @@ export function getRecentIntelligence(limit = 50, topic = null) {
             LIMIT ?
         `).all(topic, limit);
     }
-    
+
     return db.prepare(`
         SELECT * FROM intelligence 
         ORDER BY fetched_at DESC 
@@ -278,7 +268,7 @@ export function addFact(fact, confidence = 'medium', articleId = null) {
         INSERT INTO facts (fact, confidence, source_article_id)
         VALUES (?, ?, ?)
     `);
-    
+
     const result = stmt.run(fact, confidence, articleId);
     return getFact(result.lastInsertRowid);
 }
@@ -294,14 +284,12 @@ export function getAllFacts(confidence = null) {
     return db.prepare('SELECT * FROM facts ORDER BY created_at DESC').all();
 }
 
-// ==================== SESSION OPERATIONS ====================
-
 export function createSession(sessionId, userId = null, topic = 'India') {
     const stmt = db.prepare(`
         INSERT OR REPLACE INTO sessions (id, user_id, topic, last_activity)
         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
     `);
-    
+
     stmt.run(sessionId, userId, topic);
     return getSession(sessionId);
 }
@@ -315,7 +303,7 @@ export function addMessage(sessionId, role, content) {
         INSERT INTO messages (session_id, role, content)
         VALUES (?, ?, ?)
     `);
-    
+
     stmt.run(sessionId, role, content);
     db.prepare('UPDATE sessions SET last_activity = CURRENT_TIMESTAMP WHERE id = ?').run(sessionId);
 }
@@ -329,14 +317,12 @@ export function getSessionMessages(sessionId, limit = 20) {
     `).all(sessionId, limit);
 }
 
-// ==================== WATCHLIST OPERATIONS ====================
-
 export function addToWatchlist(nodeId, userId = 'default', alertThreshold = 0.5) {
     const stmt = db.prepare(`
         INSERT OR REPLACE INTO watchlist (node_id, user_id, alert_threshold)
         VALUES (?, ?, ?)
     `);
-    
+
     stmt.run(nodeId, userId, alertThreshold);
 }
 
@@ -348,12 +334,10 @@ export function getWatchlist(userId = 'default') {
     return db.prepare('SELECT * FROM watchlist WHERE user_id = ?').all(userId);
 }
 
-// ==================== GRAPH DATA ====================
-
 export function getFullGraph() {
     const nodes = getAllNodes();
     const relationships = getAllRelationships();
-    
+
     return {
         nodes: nodes.map(n => ({
             id: n.id,
@@ -371,26 +355,22 @@ export function getFullGraph() {
     };
 }
 
-// ==================== STATISTICS ====================
-
 export function getStats() {
     const nodeCount = db.prepare('SELECT COUNT(*) as count FROM nodes').get().count;
     const relCount = db.prepare('SELECT COUNT(*) as count FROM relationships').get().count;
     const intelCount = db.prepare('SELECT COUNT(*) as count FROM intelligence').get().count;
     const factCount = db.prepare('SELECT COUNT(*) as count FROM facts').get().count;
-    
+
     const nodeTypes = db.prepare('SELECT type, COUNT(*) as count FROM nodes GROUP BY type').all();
-    
+
     return {
         nodes: nodeCount,
         relationships: relCount,
         intelligence: intelCount,
         facts: factCount,
-        nodeTypes: nodeTypes.reduce((acc, t) => ({ ...acc, [t.type]: t.count }), {})
+        nodeTypes: nodeTypes.reduce((acc, t) => ({...acc, [t.type]: t.count }), {})
     };
 }
-
-// ==================== SEED DATA ====================
 
 export function seedInitialData() {
     const existingNodes = getAllNodes();
@@ -398,10 +378,9 @@ export function seedInitialData() {
         console.log('[DB] Data already exists, skipping seed');
         return;
     }
-    
+
     console.log('[DB] Seeding initial data...');
-    
-    // Add India-centric nodes
+
     const nodes = [
         { id: 'India', type: 'country', description: 'Sovereign Republic of India. Core node of the Intelligence Graph.', color: '#FF9933', size: 32 },
         { id: 'China', type: 'country', description: "People's Republic of China. Primary strategic competitor.", color: '#DE2910', size: 26 },
@@ -421,12 +400,11 @@ export function seedInitialData() {
         { id: 'UPI / Fintech', type: 'tech', description: "India's strategic soft power.", color: '#A78BFA', size: 16 },
         { id: 'Space / ISRO', type: 'tech', description: 'Strategic space capabilities.', color: '#60A5FA', size: 16 },
     ];
-    
+
     for (const node of nodes) {
         addNode(node.id, node.type, node.description, node.color, node.size);
     }
-    
-    // Add relationships
+
     const relationships = [
         { source: 'India', target: 'China', label: 'Trade Deficit $85B', strength: 0.9 },
         { source: 'India', target: 'USA', label: 'Strategic Partner', strength: 0.75 },
@@ -452,15 +430,14 @@ export function seedInitialData() {
         { source: 'Gulf States', target: 'Remittances', label: '10M+ Workers', strength: 0.85 },
         { source: 'USA', target: 'Defense', label: 'GE F414 Engines', strength: 0.6 },
     ];
-    
+
     for (const rel of relationships) {
         addRelationship(rel.source, rel.target, rel.label, rel.strength);
     }
-    
+
     console.log('[DB] Initial data seeded successfully');
 }
 
-// Initialize and seed
 initializeDatabase();
 seedInitialData();
 
